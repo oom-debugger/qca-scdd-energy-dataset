@@ -1,0 +1,46 @@
+# Simulation options for QCADesigner-E's "Coherence Vector (w/ Energy)" engine,
+# in the format read by batch_sim -o (and by the GUI's options loader).
+# Units: K, s, J, nm.  Lines starting with '#' are ignored by the parser.
+#
+# These are QCADesigner-E's own defaults.  Dhar et al. 2024 (Table 2) used the
+# same values except: input signal period 10e-12 s, and they report results for
+# ramp, gaussian and cos clocks (gaussian is the one used for the dataset).
+#
+# algorithm : 1 = Runge-Kutta, 2 = Euler
+# clock_type: 1 = COS, 2 = RAMP, 3 = GAUSS
+#
+# clock_period / input_period / t_slope_ramp / clock_type / zero_mode_act /
+# display_cell_diss / diss_trace_cood_* are ONLY honoured by a batch_sim built
+# with qcadesigner_e_batch.patch (the stock parser ignores them and leaves them
+# at zero, which breaks the energy engine).
+#
+# duration must cover the whole truth table: input k toggles with period
+# input_period * 2^k, so with n inputs one pass takes input_period * 2^(n-1).
+# 2 inputs (Ex-OR/Ex-NOR): 8e-12 s per pass -> 50e-12 is plenty.
+# 4 inputs (BTG):         32e-12 s per pass -> use duration=100e-12 or more.
+#
+# diss_trace_cood_x/y are overwritten per run by qca_scdd_dataset.py when
+# --polarization trace is used (-1/-1 = no trace file).
+[COHERENCE_ENERGY_OPTIONS]
+T=1.000000
+relaxation=1.000000e-15
+time_step=1.000000e-16
+duration=5.000000e-11
+clock_high=9.800000e-22
+clock_low=3.800000e-23
+clock_shift=0.000000e+00
+clock_period=4.000000e-12
+input_period=4.000000e-12
+t_slope_ramp=1.000000e-12
+radius_of_effect=80.000000
+epsilonR=12.900000
+layer_separation=11.500000
+algorithm=2
+clock_type=3
+randomize_cells=TRUE
+animate_simulation=FALSE
+zero_mode_act=TRUE
+display_cell_diss=FALSE
+diss_trace_cood_x=-1
+diss_trace_cood_y=-1
+[#COHERENCE_ENERGY_OPTIONS]

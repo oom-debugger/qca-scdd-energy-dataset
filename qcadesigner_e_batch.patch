@@ -1,0 +1,112 @@
+--- a/QCADesignerE/src/fileio.c	2026-09-01 22:44:46.583903800 -0700
++++ b/QCADesignerE/src/fileio.c	2026-09-01 22:44:46.608658400 -0700
+@@ -869,6 +869,31 @@
+ 
+   coherence_energy_options = g_malloc0 (sizeof (coherence_energy_OP)) ;
+ 
++  /* SCDD-dataset patch: start from the same defaults as the GUI (see
++     coherence_vector_energy.c) so that keys absent from the options file do not
++     stay at zero -- clock_period == 0 makes the energy engine divide by zero. */
++  coherence_energy_options->T                  = 1.0 ;
++  coherence_energy_options->relaxation         = 1e-15 ;
++  coherence_energy_options->time_step          = 1e-16 ;
++  coherence_energy_options->duration           = 50e-12 ;
++  coherence_energy_options->clock_high         = 9.8e-22 ;
++  coherence_energy_options->clock_low          = 3.8e-23 ;
++  coherence_energy_options->clock_shift        = 0.0 ;
++  coherence_energy_options->clock_period       = 4.0e-12 ;
++  coherence_energy_options->input_period       = 4.0e-12 ;
++  coherence_energy_options->t_slope_ramp       = 1e-12 ;
++  coherence_energy_options->radius_of_effect   = 80.0 ;
++  coherence_energy_options->epsilonR           = 12.9 ;
++  coherence_energy_options->layer_separation   = 11.5 ;
++  coherence_energy_options->algorithm          = 2 ;  /* EULER_METHOD (global_consts.h) */
++  coherence_energy_options->clock_type         = 3 ;  /* GAUSS        (global_consts.h) */
++  coherence_energy_options->randomize_cells    = TRUE ;
++  coherence_energy_options->animate_simulation = FALSE ;
++  coherence_energy_options->zero_mode_act      = TRUE ;
++  coherence_energy_options->display_cell_diss  = FALSE ;
++  coherence_energy_options->diss_trace_cood_x  = -1 ;
++  coherence_energy_options->diss_trace_cood_y  = -1 ;
++
+   while (TRUE)
+     {
+     if (NULL == (pszLine = ReadLine (pfile, '\0', TRUE))) break ;
+@@ -922,6 +947,31 @@
+     else
+     if (!strncmp (pszLine, "animate_simulation", sizeof ("animate_simulation") - 1))
+       coherence_energy_options->animate_simulation = !strncmp (pszValue, "TRUE", sizeof ("TRUE") - 1) ? TRUE : FALSE ;
++    /* SCDD-dataset patch: keys of coherence_energy_OP the stock parser ignored */
++    else
++    if (!strncmp (pszLine, "clock_period", sizeof ("clock_period") - 1))
++      coherence_energy_options->clock_period = g_ascii_strtod (pszValue, NULL) ;
++    else
++    if (!strncmp (pszLine, "input_period", sizeof ("input_period") - 1))
++      coherence_energy_options->input_period = g_ascii_strtod (pszValue, NULL) ;
++    else
++    if (!strncmp (pszLine, "t_slope_ramp", sizeof ("t_slope_ramp") - 1))
++      coherence_energy_options->t_slope_ramp = g_ascii_strtod (pszValue, NULL) ;
++    else
++    if (!strncmp (pszLine, "clock_type", sizeof ("clock_type") - 1))
++      coherence_energy_options->clock_type = atoi (pszValue) ;
++    else
++    if (!strncmp (pszLine, "zero_mode_act", sizeof ("zero_mode_act") - 1))
++      coherence_energy_options->zero_mode_act = !strncmp (pszValue, "TRUE", sizeof ("TRUE") - 1) ? TRUE : FALSE ;
++    else
++    if (!strncmp (pszLine, "display_cell_diss", sizeof ("display_cell_diss") - 1))
++      coherence_energy_options->display_cell_diss = !strncmp (pszValue, "TRUE", sizeof ("TRUE") - 1) ? TRUE : FALSE ;
++    else
++    if (!strncmp (pszLine, "diss_trace_cood_x", sizeof ("diss_trace_cood_x") - 1))
++      coherence_energy_options->diss_trace_cood_x = atoi (pszValue) ;
++    else
++    if (!strncmp (pszLine, "diss_trace_cood_y", sizeof ("diss_trace_cood_y") - 1))
++      coherence_energy_options->diss_trace_cood_y = atoi (pszValue) ;
+ 
+     g_free (pszLine) ;
+     g_free (ReadLine (pfile, '\0', FALSE)) ;
+--- a/QCADesignerE/src/main_batch_sim.c	2026-09-01 22:44:46.583903800 -0700
++++ b/QCADesignerE/src/main_batch_sim.c	2026-09-01 22:44:46.615133600 -0700
+@@ -161,6 +161,32 @@
+ 
+       if (NULL != (sim_data = run_simulation (sim_engine, EXHAUSTIVE_VERIFICATION, working_design, NULL)))
+         {
++        /* SCDD-dataset patch: report the polarisation range of every output cell.
++           max/min span the whole simulation, steady_* only its second half. */
++        {
++        int Nix3, Nix4 ;
++        for (Nix3 = 0 ; Nix3 < sim_data->number_of_traces ; Nix3++)
++          if (QCAD_CELL_OUTPUT == sim_data->trace[Nix3].trace_function)
++            {
++            double dMin = 0.0, dMax = 0.0, dSMin = 0.0, dSMax = 0.0, d = 0.0 ;
++            int icHalf = sim_data->number_samples / 2 ;
++            for (Nix4 = 0 ; Nix4 < sim_data->number_samples ; Nix4++)
++              {
++              d = sim_data->trace[Nix3].data[Nix4] ;
++              if (0 == Nix4 || d < dMin) dMin = d ;
++              if (0 == Nix4 || d > dMax) dMax = d ;
++              if (Nix4 >= icHalf)
++                {
++                if (Nix4 == icHalf || d < dSMin) dSMin = d ;
++                if (Nix4 == icHalf || d > dSMax) dSMax = d ;
++                }
++              }
++            printf ("output_polarization[%s] max=%.6f min=%.6f steady_max=%.6f steady_min=%.6f\n",
++              NULL == sim_data->trace[Nix3].data_labels ? "?" : sim_data->trace[Nix3].data_labels,
++              dMax, dMin, dSMax, dSMin) ;
++            }
++        fflush (stdout) ;
++        }
+         input_hcs = exp_array_new (sizeof (HONEYCOMB_DATA *), 1) ;
+         output_hcs = exp_array_new (sizeof (HONEYCOMB_DATA *), 1) ;
+         // For each bus, create the appropriate HONEYCOMB_DATA, fill it in with
+--- a/QCADesignerE/src/Makefile.am	2026-09-01 22:44:46.589213200 -0700
++++ b/QCADesignerE/src/Makefile.am	2026-09-01 22:44:46.627893300 -0700
+@@ -2,7 +2,7 @@
+ 
+ AUTOMAKE_OPTIONS = subdir-objects
+ 
+-bin_PROGRAMS = QCADesigner
++bin_PROGRAMS = QCADesigner batch_sim
+ 
+ UNDO_REDO_FILES = \
+ 	objects/QCADUndoEntry.c      objects/QCADUndoEntry.h \

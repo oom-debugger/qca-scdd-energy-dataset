@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+runs/
+*.log
+*.options
+QCADesignerE_Diss.trace
