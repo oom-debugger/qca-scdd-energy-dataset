@@ -484,7 +484,11 @@ def simulate_one(batch_cmd, qca_path, options_path, timeout, pol_mode, clock_per
     if os.path.exists(trace_path):
         os.remove(trace_path)
     if "total_energy_eV" not in res:
-        res["status"] = "no-energy-in-output(rc=%s)" % proc.returncode
+        # keep batch_sim's own last message (e.g. "Failed to open simulation options file !")
+        tail = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        reason = (": " + tail[-1][:80]) if tail else ""
+        res["status"] = "no-energy-in-output(rc=%s%s)" % (proc.returncode, reason)
+        res["_simulator_output"] = text.strip()      # not a CSV column, used by simulate_all
     elif pol_mode != "none" and "output_polarization_positive" not in res:
         res["status"] = "ok-no-polarization"
     else:
@@ -549,7 +553,36 @@ def simulate_all(args, rows, cells, target):
                 res.get("seconds", "?")))
             if not args.keep_logs and os.path.exists(opt_path):
                 os.remove(opt_path)
+            if n == 1 and not res["status"].startswith("ok"):
+                abort_after_first_failure(row["qca_file"], res, len(todo) - 1, batch_cmd)
     print("done -> %s" % csv_path)
+
+
+def abort_after_first_failure(qca_file, res, remaining, batch_cmd):
+    """The first simulation of a run failing means the simulator setup is wrong (the
+    layouts were just written and verified); say so plainly instead of repeating the
+    failure for every layout."""
+    said = res.get("_simulator_output", "").strip()
+    print("")
+    print("ERROR: the first simulation (%s) produced no energy value, so the remaining %d layouts"
+          " were not simulated." % (qca_file, remaining))
+    if res.get("status") == "timeout":
+        print("The simulator did not finish within --timeout seconds.")
+    elif said:
+        print("The simulator (%s) said:" % batch_cmd[0])
+        for line in said.splitlines()[-8:]:
+            print("    " + line)
+    else:
+        print("The simulator (%s) printed nothing." % batch_cmd[0])
+    if "Failed to open simulation options file" in said:
+        print("This is the unpatched QCADesigner-E batch_sim: it picks the wrong engine for"
+              " -e COHERENCE_VECTOR_ENERGY and then rejects the options file (exit code 2).")
+        print("Use the patched build from this repository: ./simulate.sh or ./run_all.sh (Docker),"
+              " or tools/build_batch_sim.sh -- see README.md, 'What the patch fixes'.")
+    elif "Failed to open the circuit file" in said:
+        print("QCADesigner-E could not read the layout file; open and re-save it with QCADesigner.")
+    print("Re-run with --keep-logs to keep every simulator log (<layout>.log) next to the layouts.")
+    raise SystemExit(1)
 
 
 # --------------------------------------------------------------------------- #

@@ -5,9 +5,36 @@ in Layered-T (LT) quantum-dot cellular automata (QCA) gates, simulated with QCAD
 
 The repository regenerates from scratch the *scdd_Polarisation_Energy (SPE)* dataset of
 Dhar et al. (2024) for the LT NAND and LT NOR gates, and applies the same procedure to the
-LT Ex-OR and LT Ex-NOR gates of the 2025 follow-up. Everything needed to reproduce or
-extend the data is here: the gate layouts, a patched command-line build of the
-simulator, the generator script, and the CSVs themselves.
+LT Ex-OR and LT Ex-NOR gates of the 2025 follow-up, and to a full adder drawn in QCADesigner
+as a worked example. The same one-command pipeline works for any QCADesigner layout.
+Everything needed to reproduce or extend the data is here: the gate layouts, a patched
+command-line build of the simulator, the generator script, and the CSVs themselves.
+
+## Quick start (nothing to compile or patch: everything runs in Docker)
+
+1. Install Docker and Git once. Ubuntu: `sudo apt-get install -y docker.io git`, then
+   `sudo usermod -aG docker $USER` and log out and back in. Windows or macOS: install and
+   start Docker Desktop (on Windows also Git for Windows, and type the commands in Git Bash).
+2. Get the repository and run the full-adder example:
+
+   ```bash
+   git clone https://github.com/oom-debugger/qca-scdd-energy-dataset.git
+   cd qca-scdd-energy-dataset
+   ./simulate.sh layouts/FULLADDER.qca
+   ```
+
+   The first run builds the patched simulator inside Docker (a few minutes). Every output
+   cell of the layout (here `Sum` and `Cout`) is then displaced 258 times and each copy is
+   simulated; the results are `data/spe_FULLADDER_Sum.csv` and `data/spe_FULLADDER_Cout.csv`,
+   one row per displacement, `status` = `ok`. The script can be re-run at any time: finished
+   rows are kept and the rest is continued.
+3. For your own circuit: draw it in QCADesigner, set the output cell(s) to **Output** and give
+   them a label, save the `.qca` file into `layouts/`, and run
+   `./simulate.sh layouts/<your file>.qca` (add the label to do a single output cell).
+
+If something is wrong the run stops at the first simulation and prints the cause and what to
+do; nobody needs to build, patch or debug QCADesigner-E by hand. A Persian version of these
+instructions is in [README.fa.md](README.fa.md).
 
 ## The data
 
@@ -17,6 +44,7 @@ simulator, the generator script, and the CSVs themselves.
 | [`data/spe_LT_NOR.csv`](data/spe_LT_NOR.csv) | LT NOR | 1081 | same |
 | [`data/spe_LT_EXOR.csv`](data/spe_LT_EXOR.csv) | LT Ex-OR | 259 | north/south 0.1…4.6 nm, east 0.1…3.4 nm, west 0.01…1.32 nm, plus the defect-free layout |
 | [`data/spe_LT_EXNOR.csv`](data/spe_LT_EXNOR.csv) | LT Ex-NOR | 259 | same |
+| [`data/spe_FULLADDER_Sum.csv`](data/spe_FULLADDER_Sum.csv), [`data/spe_FULLADDER_Cout.csv`](data/spe_FULLADDER_Cout.csv) | full adder ([`layouts/FULLADDER.qca`](layouts/FULLADDER.qca), 20 cells, drawn in QCADesigner) | 259 each | output cell `Sum` resp. `Cout`: same ranges as the Ex-OR, plus the defect-free layout |
 | `data/cumulative_LT_NAND.csv`, `data/cumulative_LT_NOR.csv` | LT NAND, LT NOR | 151 each | output cell at the *cumulative* distances 0.05·n(n+1) nm north (n ≤ 60) and 0.005·n(n+1) nm west (n ≤ 90); reproduces the published spreadsheet, see below |
 
 Each row holds the direction and distance of the displacement, the positive and negative
@@ -71,12 +99,13 @@ Requirements: Docker and Python 3 on the host (the simulator is built inside a L
 container; the generator itself is standard-library Python and also runs on Windows).
 
 ```bash
-./run_all.sh              # builds the image, writes the layouts, runs 2678 simulations (~15 min)
-./run_all.sh LT_EXOR      # one gate
+./run_all.sh              # builds the image, writes the layouts, runs 3196 simulations (~40 min)
+./run_all.sh LT_EXOR      # one gate (LT_NAND, LT_NOR, LT_EXOR, LT_EXNOR, FULLADDER)
+./simulate.sh layouts/FULLADDER.qca   # any layout, every output cell (see Quick start)
 python3 tools/compare_spe_v1.py data/spe_LT_NAND.csv data/spe_LT_NOR.csv   # against the published data
 ```
 
-Without Docker, on Debian/Ubuntu or WSL:
+Advanced, without Docker (Debian/Ubuntu or WSL):
 
 ```bash
 sudo apt install -y build-essential pkg-config gettext intltool libglib2.0-dev libgtk2.0-dev git python3
@@ -91,8 +120,10 @@ python3 qca_scdd_dataset.py --qca layouts/LT_NAND.qca --cell Z --gate "LT NAND" 
 | Path | Purpose |
 |---|---|
 | `data/` | the generated CSVs (see above) |
-| `layouts/make_lt_layouts.py` | writes the four gate layouts as QCADesigner `.qca` files (`layouts/*.qca` are its output) |
-| `qca_scdd_dataset.py` | the generator: parses a `.qca` file, writes one displaced copy per (direction, distance) — optionally copies with a cell removed — runs the simulator on each and collects the CSV; `--list-cells` inspects a layout |
+| `layouts/make_lt_layouts.py` | writes the four LT gate layouts as QCADesigner `.qca` files (`layouts/LT_*.qca` are its output) |
+| `layouts/FULLADDER.qca` | a 20-cell full adder drawn in QCADesigner (inputs `A`, `B`, `Cin`; outputs `Sum`, `Cout`; two clock zones), used as the worked example |
+| `simulate.sh` | one command for any layout: builds the Docker image, finds the layout's `OUTPUT` cells and runs the generator on each, writing `data/spe_<layout>_<cell>.csv` |
+| `qca_scdd_dataset.py` | the generator: parses a `.qca` file, writes one displaced copy per (direction, distance) — optionally copies with a cell removed — runs the simulator on each and collects the CSV; `--list-cells` inspects a layout. If the very first simulation yields no energy it stops and prints the simulator's message and the likely cause (an unpatched `batch_sim`) instead of failing once per layout |
 | `energy_options.txt` | options of the *Coherence Vector (w/ Energy)* engine in the format `batch_sim -o` reads (QCADesigner-E's defaults, Gaussian clock) |
 | `qcadesigner_e_batch.patch` | patch for QCADesigner-E's source, see below; applies cleanly to upstream `master` |
 | `docker/Dockerfile` | Ubuntu 22.04 image with the patched `batch_sim` on the PATH |
@@ -166,9 +197,13 @@ independent reasons; the patch (`qcadesigner_e_batch.patch`, about 140 lines tou
   not available), nor are other defect types (rotation, misalignment, multi-cell
   displacement), nor the machine-learning step (KNN / random forest / polynomial
   regression with r², MAE, MSE, RMSE).
-* The generator handles any `.qca` layout and any labelled cell, so other gates can be
-  added by drawing them in QCADesigner (or describing them in `make_lt_layouts.py`) and
-  adding a line to `run_all.sh`.
+* The full adder is a hand-drawn layout supplied for this repository, with no published
+  reference values to check against. Its `Cout` cell has its only neighbour 2 nm to the east,
+  so the east rows beyond 2.0 nm have the displaced cell overlapping that neighbour (they are
+  simulated all the same, as the published NAND/NOR west series does).
+* The generator handles any `.qca` layout and any labelled cell: draw the circuit in
+  QCADesigner, save it into `layouts/` and run `./simulate.sh layouts/<file>.qca` (or describe
+  it in `make_lt_layouts.py` and add a line to `run_all.sh`).
 
 ## License
 

@@ -3,8 +3,8 @@
 # the patched QCADesigner-E batch simulator.  Safe to re-run: finished rows are skipped
 # (--resume).  Needs Docker and Python 3 on the host.
 #
-#   ./run_all.sh            # everything (LT NAND, LT NOR, LT Ex-OR, LT Ex-NOR)
-#   ./run_all.sh LT_NAND    # one gate
+#   ./run_all.sh            # everything (LT NAND, LT NOR, LT Ex-OR, LT Ex-NOR, full adder)
+#   ./run_all.sh LT_NAND    # one gate (LT_NAND, LT_NOR, LT_EXOR, LT_EXNOR, FULLADDER)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -27,7 +27,7 @@ PY=$(command -v python3 || command -v python); "$PY" layouts/make_lt_layouts.py 
 mkdir -p data runs
 
 GATES=("$@")
-[ $# -eq 0 ] && GATES=(LT_NAND LT_NOR LT_EXOR LT_EXNOR)
+[ $# -eq 0 ] && GATES=(LT_NAND LT_NOR LT_EXOR LT_EXNOR FULLADDER)
 for gate in "${GATES[@]}"; do
   case "$gate" in
     # ranges of the published SPE v1 spreadsheet: N/S/E 0.1..30 nm, W 0.01..1.8 nm
@@ -38,6 +38,9 @@ for gate in "${GATES[@]}"; do
     LT_EXOR|LT_EXNOR)
       run --qca "layouts/$gate.qca" --cell Z --gate "${gate/_/ }" --out "runs/$gate" --csv "data/spe_$gate.csv" \
           --north 0.1:4.6:0.1 --south 0.1:4.6:0.1 --east 0.1:3.4:0.1 --west 0.01:1.32:0.01 ;;
+    # hand-drawn full adder saved from QCADesigner: one CSV per output cell (Sum, Cout) with the
+    # generator's default ranges, via the same one-command script that works for any layout
+    FULLADDER) ./simulate.sh layouts/FULLADDER.qca ;;
     *) echo "unknown gate $gate" >&2; exit 1 ;;
   esac
 done
