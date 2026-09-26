@@ -1,5 +1,5 @@
---- a/QCADesignerE/src/fileio.c	2026-09-01 22:44:46.583903800 -0700
-+++ b/QCADesignerE/src/fileio.c	2026-09-01 22:44:46.608658400 -0700
+--- a/QCADesignerE/src/fileio.c	2026-09-02 00:08:31.920882500 -0700
++++ b/QCADesignerE/src/fileio.c	2026-09-02 00:08:31.940260000 -0700
 @@ -869,6 +869,31 @@
  
    coherence_energy_options = g_malloc0 (sizeof (coherence_energy_OP)) ;
@@ -64,8 +64,23 @@
  
      g_free (pszLine) ;
      g_free (ReadLine (pfile, '\0', FALSE)) ;
---- a/QCADesignerE/src/main_batch_sim.c	2026-09-01 22:44:46.583903800 -0700
-+++ b/QCADesignerE/src/main_batch_sim.c	2026-09-01 22:44:46.615133600 -0700
+--- a/QCADesignerE/src/main_batch_sim.c	2026-09-02 00:08:31.922589500 -0700
++++ b/QCADesignerE/src/main_batch_sim.c	2026-09-02 00:08:31.951453400 -0700
+@@ -83,10 +83,10 @@
+     sim_engine =
+       !strncmp (pszSimEngine, "BISTABLE", sizeof ("BISTABLE") - 1)
+         ? BISTABLE
+-        : !strncmp (pszSimEngine, "COHERENCE_VECTOR", sizeof ("COHERENCE_VECTOR") - 1)
+-          ? COHERENCE_VECTOR
+-          : !strncmp (pszSimEngine, "COHERENCE_VECTOR_ENERGY", sizeof ("COHERENCE_VECTOR_ENERGY") - 1)
+-	    ? COHERENCE_VECTOR_ENERGY
++        : !strncmp (pszSimEngine, "COHERENCE_VECTOR_ENERGY", sizeof ("COHERENCE_VECTOR_ENERGY") - 1) /* SCDD-dataset patch: longer name first */
++          ? COHERENCE_VECTOR_ENERGY
++          : !strncmp (pszSimEngine, "COHERENCE_VECTOR", sizeof ("COHERENCE_VECTOR") - 1)
++	    ? COHERENCE_VECTOR
+ 	    : BISTABLE /* default */ ;
+ 
+   if (!open_project_file (pszFName, &design))
 @@ -161,6 +161,32 @@
  
        if (NULL != (sim_data = run_simulation (sim_engine, EXHAUSTIVE_VERIFICATION, working_design, NULL)))
@@ -99,8 +114,23 @@
          input_hcs = exp_array_new (sizeof (HONEYCOMB_DATA *), 1) ;
          output_hcs = exp_array_new (sizeof (HONEYCOMB_DATA *), 1) ;
          // For each bus, create the appropriate HONEYCOMB_DATA, fill it in with
---- a/QCADesignerE/src/Makefile.am	2026-09-01 22:44:46.589213200 -0700
-+++ b/QCADesignerE/src/Makefile.am	2026-09-01 22:44:46.627893300 -0700
+@@ -279,10 +305,10 @@
+         (*sim_engine) =
+           !strncmp (argv[Nix], "BISTABLE", 8)
+             ? BISTABLE
+-            : !strncmp (argv[Nix], "COHERENCE_VECTOR", 16)
+-              ? COHERENCE_VECTOR
+-              : !strncmp (argv[Nix], "COHERENCE_VECTOR_ENERGY", 23)
+-		? COHERENCE_VECTOR_ENERGY
++            : !strncmp (argv[Nix], "COHERENCE_VECTOR_ENERGY", 23) /* SCDD-dataset patch: longer name first */
++              ? COHERENCE_VECTOR_ENERGY
++              : !strncmp (argv[Nix], "COHERENCE_VECTOR", 16)
++		? COHERENCE_VECTOR
+ 		: BISTABLE /* default */ ;
+         icParms++ ;
+         }
+--- a/QCADesignerE/src/Makefile.am	2026-09-02 00:08:31.923596200 -0700
++++ b/QCADesignerE/src/Makefile.am	2026-09-02 00:08:31.962721700 -0700
 @@ -2,7 +2,7 @@
  
  AUTOMAKE_OPTIONS = subdir-objects

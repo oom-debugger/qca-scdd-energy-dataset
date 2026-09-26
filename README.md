@@ -1,191 +1,181 @@
 # qca-scdd-energy-dataset
 
-Tooling to build **single-cell displacement defect (SCDD) → energy dissipation** datasets
-for quantum-dot cellular automata (QCA) layouts, using QCADesigner-E as the simulator.
-It reproduces the data-generation step behind the *scdd_Polarisation_Energy (SPE)*
-dataset of Dhar et al. (2024, 2025), so that the dataset can be regenerated, extended to
-other gates, and audited.
+Datasets and tooling for **single-cell displacement defect (SCDD) → energy dissipation**
+in Layered-T (LT) quantum-dot cellular automata (QCA) gates, simulated with QCADesigner-E.
+
+The repository regenerates from scratch the *scdd_Polarisation_Energy (SPE)* dataset of
+Dhar et al. (2024) for the LT NAND and LT NOR gates, and applies the same procedure to the
+LT Ex-OR and LT Ex-NOR gates of the 2025 follow-up. Everything needed to reproduce or
+extend the data is here: the gate layouts, a patched command-line build of the
+simulator, the generator script, and the CSVs themselves.
+
+## The data
+
+| File | Gate | Rows | What varies |
+|---|---|---|---|
+| [`data/spe_LT_NAND.csv`](data/spe_LT_NAND.csv) | LT NAND | 1081 | output cell moved north/south/east 0.1…30 nm (0.1 nm steps) and west 0.01…1.8 nm (0.01 nm steps), plus the defect-free layout |
+| [`data/spe_LT_NOR.csv`](data/spe_LT_NOR.csv) | LT NOR | 1081 | same |
+| [`data/spe_LT_EXOR.csv`](data/spe_LT_EXOR.csv) | LT Ex-OR | 259 | north/south 0.1…4.6 nm, east 0.1…3.4 nm, west 0.01…1.32 nm, plus the defect-free layout |
+| [`data/spe_LT_EXNOR.csv`](data/spe_LT_EXNOR.csv) | LT Ex-NOR | 259 | same |
+| `data/cumulative_LT_NAND.csv`, `data/cumulative_LT_NOR.csv` | LT NAND, LT NOR | 151 each | output cell at the *cumulative* distances 0.05·n(n+1) nm north (n ≤ 60) and 0.005·n(n+1) nm west (n ≤ 90); reproduces the published spreadsheet, see below |
+
+Each row holds the direction and distance of the displacement, the positive and negative
+output polarisation, the total energy dissipation (`Sum_Ebath`) and the average energy
+dissipation per clock cycle (`Avg_Ebath`) in electron-volts, exactly as QCADesigner-E
+reports them. Column definitions are in [`data/README.md`](data/README.md).
+
+**Validation against the published numbers.** The defect-free rows agree exactly with
+the paper's Table 3 and with the first rows of the published spreadsheet: LT NAND total
+7.39e-4 eV, average 6.72e-5 eV, polarisations +0.954 / −0.948; LT NOR 9.53e-4 eV,
+8.67e-5 eV, +0.948 / −0.954. This confirms the layouts, the simulator build, the options
+and the polarisation read-out.
+
+**Comparison with the published SPE dataset (version 1).** The displaced rows do *not*
+agree at the nominal distances: only the first two or three rows of each direction do
+(LT NAND north: 3 of 300). Instead, every published north/south row n (nominal 0.1·n nm)
+coincides, to three significant digits in both polarisations and the energy, with our
+row at the **cumulative** distance 0.1 + 0.2 + … + 0.1·n = 0.05·n(n+1) nm. For LT NAND
+this holds for all 41 rows up to n = 41 (`tools/match_reference.py`,
+`tools/cumulative_replica.sh`, `data/cumulative_LT_NAND.csv`); for LT NOR the same curve is
+followed within a few per cent in energy and typically 0.01–0.04 in polarisation (more
+at the sharp dip near n = 11–12), and its east series matches the cumulative distances
+exactly for nominal 0.1…2.1 nm. From n = 42 on, the accumulated
+displacement (≥ 90 nm) exceeds the simulator's 80 nm radius of effect, the output cell no
+longer interacts with the circuit, and the published rows show the corresponding constant
+energy (6.56e-4 eV for NAND, 7.25e-4 eV for NOR) with the polarisations recorded as
+±1.000: 259 of the 300 rows of each north and south series, 226 (NAND) / 266 (NOR) of the
+east series and 26 / 27 of the 180 west series are of this kind. The published west rows
+follow cumulative 0.01 nm steps for the first eight rows and then become irregular, with
+the output cell having moved past its neighbour (energies from 2e-5 to 4.8e-3 eV). The
+simplest explanation is that each displaced layout was produced by translating the
+*previous* layout by the new nominal step instead of translating the original, so the
+"shifting distance" column of the published dataset does not describe the simulated
+geometry. The CSVs here displace the original layout by exactly the nominal distance,
+as the papers describe, which is why they differ from the published rows beyond the first
+few; the two `data/cumulative_*.csv` files reproduce the published rows for reference.
 
 ## Background
 
 A QCA circuit is a grid of 18 nm cells drawn in [QCADesigner](https://github.com/kwalus/QCADesigner);
-[QCADesigner-E](https://github.com/FSillT/QCADesigner-E) extends it with an estimate of
-the energy the circuit dissipates (coherence-vector engine with energy accounting).
-Dhar et al. asked how the energy dissipation and the output polarisation of Layered-T (LT)
-logic gates change when the *output cell* is fabricated slightly out of place:
+[QCADesigner-E](https://github.com/FSillT/QCADesigner-E) adds an estimate of the energy
+the circuit dissipates (coherence-vector engine with energy accounting). Dhar et al.
+asked how the energy dissipation and the output polarisation of LT gates change when the
+output cell is fabricated slightly out of place: move it north/south/east in 0.1 nm steps
+and west in 0.01 nm steps (west is finer because the neighbouring cell is only 2 nm
+away), simulate every displaced copy, and tabulate direction, distance, polarisations and
+energies; machine-learning models are then trained on the table.
 
-1. take a defect-free `.qca` layout of the gate,
-2. move the output cell north/south/east in 0.1 nm steps and west in 0.01 nm steps
-   (west is finer because the neighbouring cell is only 2 nm away),
-3. simulate every displaced copy in QCADesigner-E,
-4. record direction, distance, output polarisation (+ and −), total energy dissipation
-   (`Sum_Ebath`) and average energy dissipation per clock cycle (`Avg_Ebath`),
-5. train KNN / random-forest / polynomial-regression models on the table.
+## Reproducing everything
 
-The published SPE dataset (version 1) covers the LT NAND and LT NOR gates with 2160 rows;
-the 2025 follow-up applies the same procedure to LT Ex-OR, LT Ex-NOR and a 4-bit LT
-binary-to-gray converter (BTG, output cells `G0`–`G3`). This repository automates steps
-1–4 for any `.qca` layout and any labelled cell.
-
-## Dataset format
-
-One row per simulated layout. The columns mirror the published SPE dataset and add
-bookkeeping fields:
-
-| SPE dataset column | column in `spe_dataset.csv` |
-|---|---|
-| Direction of Cell Misalignment | `direction` (`north` / `south` / `east` / `west`) |
-| Shifting Distance from Base Position (nm) | `distance_nm` (unsigned) and `signed_displacement_nm` (north/west negative, south/east positive, as in the papers) |
-| Output Polarization_positive / _Negative | `output_polarization_positive`, `output_polarization_negative` |
-| Total Energy Dissipation (Sum_Ebath) | `total_energy_eV` (+ `total_energy_error_eV`) |
-| Average Energy Dissipation per cycle (Avg_Ebath) | `avg_energy_per_cycle_eV` (+ `avg_energy_error_eV`) |
-| — | `gate`, `cell`, `defect` (`none` / `displacement` / `missing`), `qca_file`, `status`, `seconds` |
-
-Energies are in electron-volts exactly as printed by QCADesigner-E. A `manifest.csv`
-next to the generated layouts records every variant (file, cell, direction, dx, dy, new
-coordinates), so the layouts can also be simulated by hand in the GUI.
-
-Displacement ranges used in the literature (nm): LT NAND, output cell — east 0.1…7.4,
-west 0.01…1.54, north 0.1…4.1, south 0.1…4.1; LT NOR — east 0.1…3.4, west 0.01…1.53,
-north/south as NAND (Dhar et al. 2024, eq. 7). LT Ex-OR / Ex-NOR, cell `Z` — north and
-south 0.1…4.6, east 0.1…3.4, west 0.01…1.32 (these are the script's defaults). BTG —
-per output cell, north up to 8.1 / 8.1 / 5.9 / 3.8 and south up to 4.6 / 7.2 / 9.1 / 10.2
-for `G0`…`G3`, east up to 3.4, west up to roughly 0.4–0.6 (Dhar et al. 2025).
-
-## Contents
-
-| File | Purpose |
-|---|---|
-| `qca_scdd_dataset.py` | The generator. Parses a `.qca` file, writes one displaced copy per (direction, distance) — optionally also copies with a cell removed — runs QCADesigner-E's batch simulator on each copy and collects the CSV. Python 3.6+, standard library only. |
-| `energy_options.txt` | Options for the *Coherence Vector (w/ Energy)* engine in the format `batch_sim -o` reads (QCADesigner-E defaults; the papers' Table 2 settings are noted in comments). |
-| `qcadesigner_e_batch.patch` | Patch for QCADesigner-E's source (three small hunks): makes the command-line simulator parse **all** energy options (the stock parser ignores eight of them and leaves them at zero, which breaks the energy engine), prints the output-cell polarisation after each run, and adds `batch_sim` to the build. Applies cleanly to upstream `master`. |
-| `LICENSE` | GPL-3.0-or-later. |
-
-## Status — what is here and what is missing
-
-Done:
-
-* Layout parsing and displacement, verified on QCADesigner-E's own example circuits
-  (multi-layer files with labels, fixed-polarisation, input and output cells). Every
-  generated file is re-parsed and checked: exactly the target cell moved, by exactly the
-  requested amount, and nothing else changed.
-* The full pipeline (layouts → simulator calls → CSV, with `--resume`) exercised against
-  a stand-in simulator that reproduces `batch_sim`'s command line and output format.
-* The patch applies cleanly to the current QCADesigner-E `master` (`git apply --check`).
-
-Missing / to do:
-
-1. **Layout files.** No `.qca` layouts are included; the LT gate layouts used in the
-   papers are not distributed. Draw them in QCADesigner 2.0.3 or QCADesigner-E (an LT
-   gate is two layers: the device cell with a fixed-polarisation cell directly above it)
-   and give the output cell a label (`Z`, `G0`…). Contributions of layouts are welcome.
-2. **The dataset itself.** This repository is the generator, not the data. Running it on
-   the LT Ex-OR, LT Ex-NOR and BTG layouts produces the CSVs.
-3. **Validation against the real simulator.** The patched `batch_sim` has not yet been
-   compiled and run here (it builds only on Linux). The first real run should compare the
-   defect-free baseline row with Table 3 of the 2024 paper (LT NAND, Gaussian clock:
-   total ≈ 7.39e-4 eV, average ≈ 6.72e-5 eV) before generating thousands of rows.
-4. **Polarisation definition.** The patch reports the max/min of the output-cell trace
-   over the second half of the simulation; the papers read the + and − plateaus off the
-   waveform in the GUI. Confirm the two agree on the baseline layout.
-5. **Other defects and the ML step.** Only single-cell displacement (plus an optional
-   "missing cell") is implemented — no rotation, misalignment or multi-cell defects — and
-   the KNN / RF / polynomial-regression training with r², MAE, MSE, RMSE is not included.
-
-## Requirements
-
-* Python 3.6+ (layout generation works on any OS).
-* Linux (or WSL) with a C toolchain and GTK2/GLib development headers to build the
-  patched QCADesigner-E `batch_sim`; the Windows installer of QCADesigner-E ships the
-  GUI only.
-
-## Setup
+Requirements: Docker and Python 3 on the host (the simulator is built inside a Linux
+container; the generator itself is standard-library Python and also runs on Windows).
 
 ```bash
-sudo apt install build-essential autoconf automake libtool pkg-config gettext \
-                 libglib2.0-dev libgtk2.0-dev git python3
-git clone https://github.com/FSillT/QCADesigner-E.git
-cd QCADesigner-E
-git apply /path/to/qca-scdd-energy-dataset/qcadesigner_e_batch.patch
-cd QCADesignerE
-./autogen.sh && ./configure --prefix=$HOME/qde && make
-ls -l src/batch_sim          # the command-line simulator
+./run_all.sh              # builds the image, writes the layouts, runs 2678 simulations (~15 min)
+./run_all.sh LT_EXOR      # one gate
+python3 tools/compare_spe_v1.py data/spe_LT_NAND.csv data/spe_LT_NOR.csv   # against the published data
 ```
 
-If `autogen.sh` does not cooperate with modern autotools, the repository already ships a
-generated `configure` and `Makefile.in` that contain a `batch_sim` rule, so
-`./configure && make -C src batch_sim` is an alternative.
-
-## Usage
-
-Inspect a layout (cell indices, functions, labels, layers, coordinates):
+Without Docker, on Debian/Ubuntu or WSL:
 
 ```bash
-python3 qca_scdd_dataset.py --qca LT_ExOR.qca --list-cells
-```
-
-Generate the displaced layouts only (no simulator needed):
-
-```bash
-python3 qca_scdd_dataset.py --qca LT_ExOR.qca --cell Z --gate "LT Ex-OR" --out runs/ltexor
-```
-
-Generate, simulate and build the CSV (LT Ex-OR / Ex-NOR ranges are the defaults:
-258 displaced layouts + 1 baseline per gate):
-
-```bash
-python3 qca_scdd_dataset.py --qca LT_ExOR.qca --cell Z --gate "LT Ex-OR" --out runs/ltexor \
-    --batch-sim ~/QCADesigner-E/QCADesignerE/src/batch_sim --options energy_options.txt --resume
-```
-
-4-bit LT BTG, one run per output cell (raise `duration` in `energy_options.txt` to at
-least 100e-12 s first — with 4 inputs one pass over the truth table takes 32e-12 s):
-
-```bash
-python3 qca_scdd_dataset.py --qca LT_BTG.qca --cell G0 --gate "LT BTG" --out runs/btg_g0 \
-    --north 0.1:8.1:0.1 --south 0.1:4.6:0.1 --east 0.1:3.4:0.1 --west 0.01:0.4:0.01 \
+sudo apt install -y build-essential pkg-config gettext intltool libglib2.0-dev libgtk2.0-dev git python3
+tools/build_batch_sim.sh                     # clones QCADesigner-E, applies the patch, builds src/batch_sim
+python3 layouts/make_lt_layouts.py
+python3 qca_scdd_dataset.py --qca layouts/LT_NAND.qca --cell Z --gate "LT NAND" --out runs/lt_nand \
     --batch-sim ~/QCADesigner-E/QCADesignerE/src/batch_sim --resume
 ```
 
-Other flags: `--missing SUM,#12` also writes layouts with those cells deleted;
-`--polarization trace` reads the polarisation from QCADesigner-E's trace file instead of
-the patched stdout line; `--keep-logs` keeps every simulator's full output; `--timeout`
-caps one simulation (default 2 h); `--csv` chooses the output file. Ranges accept
-`start:stop:step`, a comma list, or `none`.
+## Contents
 
-Runtime: one energy simulation integrates `duration / time_step` (500 000 time steps by
-default) for every cell, so expect seconds to minutes per layout; `--resume` lets a run be
-stopped and continued.
+| Path | Purpose |
+|---|---|
+| `data/` | the generated CSVs (see above) |
+| `layouts/make_lt_layouts.py` | writes the four gate layouts as QCADesigner `.qca` files (`layouts/*.qca` are its output) |
+| `qca_scdd_dataset.py` | the generator: parses a `.qca` file, writes one displaced copy per (direction, distance) — optionally copies with a cell removed — runs the simulator on each and collects the CSV; `--list-cells` inspects a layout |
+| `energy_options.txt` | options of the *Coherence Vector (w/ Energy)* engine in the format `batch_sim -o` reads (QCADesigner-E's defaults, Gaussian clock) |
+| `qcadesigner_e_batch.patch` | patch for QCADesigner-E's source, see below; applies cleanly to upstream `master` |
+| `docker/Dockerfile` | Ubuntu 22.04 image with the patched `batch_sim` on the PATH |
+| `run_all.sh` | regenerates every dataset (build image → layouts → simulations → CSVs), resumable |
+| `tools/compare_spe_v1.py` | downloads the published SPE spreadsheet and compares it with the CSVs row by row (`--export` writes it as CSV) |
+| `tools/match_reference.py` | for every published row, finds the generated row with the same polarisations and energy and tests the cumulative-displacement explanation |
+| `tools/cumulative_replica.sh` | simulates a gate at the cumulative distances (writes `data/cumulative_<GATE>.csv`) |
+| `tools/build_batch_sim.sh` | native (non-Docker) build of the patched simulator |
 
-## How it works
+## How the data was produced
 
-* A `.qca` file is plain text: each cell is a `[TYPE:QCADCell]` block with its centre
-  (`x=`, `y=`), bounding box, four `[TYPE:CELL_DOT]` blocks and, for inputs/outputs, a
-  `[TYPE:QCADLabel]`. The script shifts every coordinate line inside the target block and
-  leaves the rest of the file byte-for-byte unchanged (line endings included).
-* QCADesigner's y axis grows downwards on screen, so *north* is implemented as
-  *y decreases* and *south* as *y increases*; east/west change x.
-* The simulator is invoked as
-  `batch_sim -f layout.qca -e COHERENCE_VECTOR_ENERGY -o options -n 1 -t 0`
-  (one run, no random perturbation). In a non-GUI build QCADesigner-E's messages go to
-  stderr, so the script parses `Total energy dissipation (Sum_Ebath): … eV (Error: +/- … eV)`
-  and `Average energy dissipation per cycle (Avg_Ebath): …` from there, and the
-  `output_polarization[LABEL] max=… min=… steady_max=… steady_min=…` line the patch adds
-  from stdout.
-* With `--polarization trace` the per-run options ask QCADesigner-E to log the target cell
-  (`diss_trace_cood_x/y`); the engine matches cells by integer-truncated coordinates, so a
-  cell in another layer with the same truncated x/y would be mixed in, and the file is
-  about 500 000 lines per run (deleted after parsing).
-* `energy_options.txt` uses QCADesigner-E's defaults (1 K, relaxation 1e-15 s, time step
-  1e-16 s, duration 50e-12 s, clock 9.8e-22 / 3.8e-23 J, Gaussian clock, radius of effect
-  80 nm, εr 12.9, layer separation 11.5 nm). The papers additionally used a 10e-12 s input
-  period. The QCADesigner-E manual notes that with `zero_mode_act=TRUE` the input cells and
-  their neighbours must be in matching clock zones.
+**Layouts.** LT NAND and LT NOR follow Fig. 3, Fig. 4 and Fig. 7 of the 2024 paper:
+18 × 18 nm cells on a 20 nm pitch, dots 4.5 nm from the centre, dot diameter 4 nm
+(Table 1); layer 1 holds input A, input B, one normal cell and the output Z; layer 2
+holds one fixed-polarisation cell directly above the empty slot between A and B
+(P = +1 → NAND, P = −1 → NOR); all cells in clock zone 0. LT Ex-OR and LT Ex-NOR were
+reconstructed cell by cell from Fig. 2 of the 2025 paper: four LT gates realising
+Z = L⁺(L⁺(A, L⁺(A,B)), L⁺(B, L⁺(A,B))) with all four fixed cells at +1, 26 cells in three
+clock zones (the figure's colours: green 0, magenta 1, cyan 2); the Ex-NOR adds a
+corner-coupled (inverting) step before its output, 28 cells. The 26-cell count matches
+the "18.75 % fewer cells than the 32-cell majority-voter version" stated for that design.
+Clock zones of input and output cells are not visible in the figure and were set to the
+zone of the adjacent wire. `python3 layouts/make_lt_layouts.py` prints an ASCII map of
+each layout.
+
+**Displacement.** The output cell (its four dots and its label) is shifted in the `.qca`
+text; QCADesigner's y axis grows downwards on screen, so *north* is a decrease of y. The
+signed displacement is negative for north and west, positive for south and east, as in
+the papers.
+
+**Simulation.** `batch_sim -f layout.qca -e COHERENCE_VECTOR_ENERGY -o energy_options.txt -n 1 -t 0`
+(one run, no random perturbation, exhaustive input vectors): temperature 1 K, relaxation
+1e-15 s, time step 1e-16 s, duration 50e-12 s, clock 9.8e-22 / 3.8e-23 J, clock and input
+period 4e-12 s, Gaussian clock with 1e-12 s slopes, radius of effect 80 nm, εr 12.9,
+layer separation 11.5 nm, Euler integration, zeroing of inputs on. These are
+QCADesigner-E's defaults and reproduce the published numbers.
+
+**Polarisation.** The patched `batch_sim` prints, for every output cell, the largest and
+smallest polarisation over the whole simulation and over its second half; the CSV uses
+the second-half values (the papers read the plateaus off the waveform in the GUI).
+
+**Energies.** Taken verbatim from QCADesigner-E's summary lines
+`Total energy dissipation (Sum_Ebath)` and `Average energy dissipation per cycle (Avg_Ebath)`,
+including the error it prints (which can be negative, as in the paper's Table 3).
+
+## What the patch fixes
+
+Stock QCADesigner-E cannot run the energy engine from the command line at all, for three
+independent reasons; the patch (`qcadesigner_e_batch.patch`, about 140 lines touching
+`fileio.c`, `main_batch_sim.c` and `Makefile.am`) fixes them and adds one feature:
+
+1. `batch_sim` tests the engine name against `COHERENCE_VECTOR` before
+   `COHERENCE_VECTOR_ENERGY`, so `-e COHERENCE_VECTOR_ENERGY` selected the plain engine
+   and then rejected the options file. The longer name is now tested first.
+2. The options-file parser for the energy engine started from an all-zero structure and
+   ignored eight of its keys (`clock_period`, `input_period`, `t_slope_ramp`, `clock_type`,
+   `zero_mode_act`, `display_cell_diss`, `diss_trace_cood_x/y`); a zero clock period breaks
+   the engine. It now starts from the GUI defaults and parses every key.
+3. `batch_sim` was not listed in `bin_PROGRAMS`, so `make` did not build it.
+4. After each run, the polarisation range of every output cell is printed
+   (`output_polarization[LABEL] max=… min=… steady_max=… steady_min=…`).
+
+## Status and limitations
+
+* The LT NAND and LT NOR layouts and settings are validated against the published
+  numbers (see above). The Ex-OR and Ex-NOR layouts are reconstructions from a figure:
+  cell positions and the zones of the wires are unambiguous, the zones of the input and
+  output cells are assumed, and no published absolute energy value was available to check
+  them against.
+* The 4-bit LT binary-to-gray converter of the 2025 paper is not included (its layout was
+  not available), nor are other defect types (rotation, misalignment, multi-cell
+  displacement), nor the machine-learning step (KNN / random forest / polynomial
+  regression with r², MAE, MSE, RMSE).
+* The generator handles any `.qca` layout and any labelled cell, so other gates can be
+  added by drawing them in QCADesigner (or describing them in `make_lt_layouts.py`) and
+  adding a line to `run_all.sh`.
 
 ## License
 
 GPL-3.0-or-later. `qcadesigner_e_batch.patch` modifies QCADesigner-E, which is distributed
-under the GPL; the rest of the repository is licensed the same way for simplicity.
+under the GPL; the rest of the repository is licensed the same way for simplicity. The
+published SPE spreadsheet is the property of its authors and is only downloaded on
+demand by `tools/compare_spe_v1.py`, never redistributed here.
 
 ## References
 
